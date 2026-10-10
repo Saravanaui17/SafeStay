@@ -1,154 +1,139 @@
-# 🛟 SafeStay — Real-Time Crisis Communication for Tourists
+# SafeStay
 
-> **Track:** TravelTech — *Real-Time Crisis Communication for Tourists During Extreme Weather Events*
-> **Live demo:** `<paste your GitHub Pages / Netlify link here>`
-> **Demo video:** [`demo/demo.mp4`](demo/demo.mp4) · `<optional YouTube unlisted link>`
+A disaster alert web app for tourists. It checks what natural hazards are near you, estimates how long until they reach you, and tells you what to do in your own language, even on a weak connection.
 
-## 1. The problem
+Built for the TravelTech track: *Real-Time Crisis Communication for Tourists During Extreme Weather Events*.
 
-When a flash flood, cyclone, wildfire or earthquake hits, foreign tourists are the most exposed people in the area: they don't know the local geography, can't read local-language warnings, and can't tell which areas are actually unsafe. Official warnings are fragmented and rarely translated, so travellers fall back on unverified social media rumours. The result is panic, tourists walking *into* danger, and avoidable strain on rescue services.
+- Live app: hosted on GitHub Pages (link in the repository's About section)
+- Demo video: [demo/demo.mp4](demo/demo.mp4)
 
-## 2. The solution
+## Problem
 
-**SafeStay** is a free, installable web app (PWA) that turns scattered hazard data into one clear answer for the person holding the phone:
+When a flash flood, cyclone, wildfire or earthquake hits, foreign tourists are among the people most at risk. They don't know the local geography, often can't read local-language warnings, and have no easy way to tell which areas are actually unsafe. Official warnings are scattered across agencies and are rarely translated, so many travellers end up relying on unverified social media posts. That leads to panic, people walking into danger zones, and extra pressure on rescue services.
 
-> **What is coming? How bad? How long do I have? What exactly should I do — in my language?**
+## What SafeStay does
 
-| Feature | What it does |
+SafeStay answers four questions for the person holding the phone: what is coming, how bad is it, how long do I have, and what should I do right now.
+
+- **Multiple hazards.** Floods and heavy rain, storms and cyclones, earthquakes, tsunami risk, wildfires, extreme heat, volcanoes and landslides.
+- **Time estimate.** Each hazard gets a live countdown. How it is calculated depends on the hazard (see "How the estimates work").
+- **Clear instructions.** Four short, ordered steps per hazard. The heading changes between "Do this now" and "Prepare" based on how soon the hazard arrives.
+- **Escape options.** Nearest shelters and hospitals with walking times and directions, the nearest higher ground for flood-type hazards, and a "move away from the fire" direction for wildfires.
+- **Languages.** English, Hindi, Tamil, Spanish and Chinese. The interface, alerts and instructions are all translated.
+- **Low-bandwidth mode.** Turns on automatically on 2G, Data Saver or when offline. It downloads smaller data feeds, skips shelter lookups, and shows plain text with a button to copy a short summary that can be sent by SMS.
+- **Offline use.** A service worker caches the app. The safety guides work with no connection at all, and the last result stays on screen with its countdowns still running.
+- **Family check-in.** One tap builds an "I'm safe", "I need help" or status message with a map link and the current top hazard. It can be sent through the phone's share sheet, WhatsApp, or as an SMS to saved contacts. SMS works without internet.
+- **Emergency number.** Looked up offline from the user's coordinates, with 112 as the fallback since it works on GSM networks worldwide.
+- **CAP support.** Alerts follow the Common Alerting Protocol 1.2 structure, can be exported as CAP XML, and external CAP feeds can be added.
+- **Demo scenarios.** Simulated flood, cyclone, earthquake, wildfire and heatwave scenarios, clearly marked as simulations, for presentations when nothing is happening in real life.
+
+## Tech stack
+
+- HTML5, CSS3 and vanilla JavaScript. No frameworks, no build step, no third-party JavaScript libraries.
+- Progressive Web App: service worker for offline caching and a web app manifest so it can be installed on a phone.
+- Browser APIs: Geolocation, Web Share, Clipboard, Cache Storage, localStorage, DOMParser (for reading CAP XML).
+- No backend, database or accounts. Everything runs in the browser.
+- Hosting: GitHub Pages (static files over HTTPS, which geolocation and service workers require).
+
+## Data sources
+
+All of these are free and need no API key.
+
+| Source | Used for |
 |---|---|
-| 🌍 **Multi-hazard detection** | Floods / heavy rain, storms & cyclones, earthquakes, tsunami risk, wildfires, extreme heat, volcanoes, landslides. |
-| ⏱️ **ETA ("how long do I have")** | Live countdown per hazard: forecast onset for weather, S-wave arrival for earthquakes, wind-driven spread for wildfires, track-based arrival for cyclones, wave travel time for tsunami. |
-| 📋 **Concise step-by-step actions** | 4 short, ordered steps per hazard. Heading switches between **"Do this now"** and **"Prepare"** depending on urgency. |
-| 🏃 **Escape options** | Nearest shelters & hospitals with walking time + directions, nearest **higher ground** (elevation sampling) for floods/tsunami/storm surge, and "move away from the fire" compass direction. |
-| 🌐 **Multilingual** | English, हिन्दी, தமிழ், Español, 中文 — alerts, steps and UI. |
-| 📡 **Low-bandwidth mode** | Auto-enabled on 2G / Data Saver / offline. Fetches smaller feeds, skips maps and shelters, renders **plain text** and gives a one-tap **copy-as-text summary** that can be sent by SMS. |
-| 📴 **Offline-first** | A service worker caches the app. All safety guides work with **zero connectivity**; the last result is cached and its countdowns keep running. |
-| 👪 **Tell your family** | One tap builds *"✅ I'm safe / 🆘 I need help / ℹ️ status"* + a Google Maps location link + the current top hazard. Send via native share, WhatsApp, or **SMS to saved contacts (works without internet)**. |
-| 📞 **Local emergency number** | Offline lookup, with `112` (works on GSM networks worldwide) as fallback. |
-| 🧾 **CAP-aligned** | All alerts use the OASIS **Common Alerting Protocol 1.2** vocabulary; export any alert as CAP XML; ingest any CAP feed. See §4. |
-| 🧪 **Demo scenarios** | Clearly labelled **SIMULATION** scenarios (flood, cyclone, quake, fire, heat) for presentations when nothing is happening in real life. |
+| [Open-Meteo](https://open-meteo.com/) | Weather forecast (rain, wind, temperature, humidity) and ground elevation |
+| [USGS Earthquake Hazards Program](https://earthquake.usgs.gov/earthquakes/feed/) | Earthquakes from the last 24 hours |
+| [NASA EONET](https://eonet.gsfc.nasa.gov/) | Active wildfires, cyclones, volcanoes, floods and landslides |
+| [US National Weather Service API](https://www.weather.gov/documentation/services-web-api) | Official CAP alerts (United States only) |
+| [OpenStreetMap](https://www.openstreetmap.org/copyright) via [Overpass](https://overpass-api.de/) | Shelters, hospitals and assembly points |
 
-## 3. How it works
+Directions open in Google Maps through a plain link. No Google API is used.
 
-```
- GPS / city ──► Open-Meteo ─ forecast (rain, gusts, heat, humidity, wind) + elevation
-            ├─► USGS ───────  earthquakes (last 24 h)
-            ├─► NASA EONET ─  wildfires, cyclones, volcanoes, floods, landslides
-            ├─► US NWS ─────  official CAP alerts (US only)
-            ├─► Custom CAP ─  any CAP 1.2 feed URL you configure
-            └─► Overpass ───  shelters / hospitals / assembly points (OpenStreetMap)
-                     │
-          analyse + normalise to CAP alert objects  (js/sources.js, js/cap.js)
-                     │
-     sort by severity then ETA ─► localised UI (js/app.js, js/i18n.js)
-                     │
-      cache ► offline  ·  low-bandwidth text view  ·  family broadcast
-```
+## How it works
 
-Everything runs **in the browser** — no backend, no accounts, no API keys, no tracking. Location and family contacts never leave the device (except the message the user chooses to send).
+1. The app gets the user's position from GPS, or from a chosen city if GPS is unavailable.
+2. It requests the sources above in parallel. If one fails, the others still work and the status line says which source was unavailable.
+3. Each source's data is analysed and converted into a common alert object that uses CAP fields (category, event, urgency, severity, certainty, onset, expires, area).
+4. Alerts are sorted by severity, then by arrival time, and shown in the selected language.
+5. The result is cached locally so it can be shown again when the connection drops.
 
-### Thresholds (see `js/sources.js`)
-| Hazard | Trigger (→ CAP severity Minor / Moderate / Severe / Extreme) |
-|---|---|
-| Flood | rain ≥ 5 / 10 / 20 / 40 mm/h, or 24 h total ≥ 75 / 120 / 200 / 300 mm; +1 level if elevation < 10 m |
-| Storm | gusts ≥ 60 / 90 / 120 / 160 km/h; thunderstorm codes raise to Minor/Moderate |
-| Heat | apparent temperature ≥ 38 / 41 / 46 / 52 °C |
-| Fire weather | hot + dry + windy conditions (clearly labelled *conditions*, not an active fire) |
-| Earthquake | magnitude × distance rules (e.g. M7+ within 150 km = Extreme); S-wave ETA = hypocentral distance ÷ 3.5 km/s |
-| Tsunami | M ≥ 6.5 shallow offshore quake flagged by USGS, user < 40 m elevation; ETA = distance ÷ 700 km/h |
-| Wildfire (active) | EONET fire within 100 km; ETA only if wind is blowing from the fire toward the user (spread ≈ 3 % of wind speed) |
-| Cyclone | EONET storm within 800 km (own hazard type since v2); ETA from the storm's last two track points when it is heading toward the user |
-| Extreme cold | apparent temperature (incl. wind chill) ≤ −15 / −25 / −35 / −45 °C |
-| Dust / sandstorm | Open-Meteo air-quality (CAMS) mineral dust ≥ 200 / 500 / 1000 / 2000 µg/m³ |
+The pipeline code is in `js/sources.js` and the CAP model is in `js/cap.js`.
 
-## 4. CAP (Common Alerting Protocol) alignment
+## How the estimates work
 
-SafeStay represents every alert — whether derived by us or received from an official source — with the CAP 1.2 fields:
+| Hazard | Severity based on | Arrival time based on |
+|---|---|---|
+| Flood / heavy rain | Hourly rain (5 / 10 / 20 / 40 mm/h) or 24-hour total (75 / 120 / 200 / 300 mm); raised one level below 10 m elevation | First hour of the forecast that crosses the threshold |
+| Storm | Wind gusts (60 / 90 / 120 / 160 km/h) and thunderstorm codes | First forecast hour above threshold |
+| Extreme heat | Apparent temperature (38 / 41 / 46 / 52 C) | First forecast hour above threshold |
+| Fire weather | Hot, dry and windy conditions together (labelled as conditions, not an active fire) | First forecast hour meeting the conditions |
+| Earthquake | Magnitude and distance | Distance divided by S-wave speed (3.5 km/s) |
+| Tsunami | Large shallow offshore quake flagged by USGS, user below 40 m elevation | Distance divided by open-ocean wave speed (about 700 km/h) |
+| Active wildfire | Distance to the fire (within 100 km) | Only shown if the wind blows from the fire toward the user; spread assumed at about 3% of wind speed |
+| Cyclone | Distance (within 800 km) and wind speed | Storm's recent track, only if it is heading toward the user |
 
-| CAP field | In SafeStay |
-|---|---|
-| `category` | Met / Geo / Fire / Health / Other (from hazard) |
-| `event` | e.g. "Flood / Heavy Rain", "Earthquake" |
-| `urgency` | Immediate (≤ 1 h) / Expected (≤ 12 h) / Future / Past / Unknown, from the ETA |
-| `severity` | Minor / Moderate / Severe / Extreme / Unknown |
-| `certainty` | Observed (e.g. USGS) / Likely / Possible (forecasts) |
-| `onset`, `expires` | ETA and end of the hazard window |
-| `headline`, `instruction` | localised headline; step-by-step instructions |
-| `area` | `areaDesc` + `circle` around the user |
-| `status` | `Actual`, or `Exercise` for simulations |
+The four CAP severity levels (Minor, Moderate, Severe, Extreme) are used throughout. These are estimates built from public data, not official warnings.
 
-* **Export:** every alert card has **⬇ Download CAP 1.2 XML** (`CAP.xml()` in `js/cap.js`).
-* **Ingest:** paste any CAP 1.2 XML feed URL in **Settings** (the server must allow CORS); alerts whose `circle`/`polygon` contains the user are shown. US National Weather Service alerts (native CAP) are fetched automatically in the US.
-* **Honest scope:** SafeStay is a CAP-aligned *consumer / aggregator*, not a certified CAP issuer. Alerts it computes itself are labelled **Estimate** and are never presented as official warnings.
+## CAP alignment
 
-## 5. Open-source libraries & APIs used (disclosure)
+SafeStay stores and displays every alert with CAP 1.2 fields, whether the alert was computed by the app or received from an official feed.
 
-Plain HTML/CSS/JS. The only third-party script is [Leaflet](https://leafletjs.com/) 1.9.4 (BSD-2), loaded lazily from cdnjs **after** the text result and never in low-bandwidth mode unless the person taps *Load map*. External data APIs (all free, keyless):
+- **Export.** Every alert has a "Download CAP 1.2 XML" button (see `CAP.xml()` in `js/cap.js`). Simulated alerts are exported with status `Exercise`.
+- **Import.** A CAP 1.2 XML feed URL can be added under Settings. Alerts whose circle or polygon contains the user are shown. The feed server must allow cross-origin requests.
+- **US alerts.** National Weather Service alerts are native CAP and are fetched automatically for US locations.
 
-* [Open-Meteo](https://open-meteo.com/) — weather forecast & elevation (CC BY 4.0)
-* [USGS Earthquake Hazards Program](https://earthquake.usgs.gov/earthquakes/feed/) — earthquake feed (public domain)
-* [NASA EONET](https://eonet.gsfc.nasa.gov/) — natural event tracker
-* [US National Weather Service API](https://www.weather.gov/documentation/services-web-api) — official CAP alerts (US)
-* [OpenStreetMap](https://www.openstreetmap.org/copyright) via the [Overpass API](https://overpass-api.de/) — shelters/hospitals (ODbL)
-* [Open-Meteo geocoding](https://open-meteo.com/en/docs/geocoding-api) — worldwide city search; [Open-Meteo air quality](https://open-meteo.com/en/docs/air-quality-api) — dust forecast
-* [BigDataCloud client reverse-geocoding](https://www.bigdatacloud.com/free-api/free-reverse-geocode-to-city-api) — place name for GPS positions (best effort)
-* [OpenStreetMap Germany routing](https://routing.openstreetmap.de/) — walking routes (public server, fair use) and OSM map tiles
-* [RainViewer](https://www.rainviewer.com/api.html) — optional rain-radar overlay (best effort)
-* Directions open in Google Maps (link only, no API)
+SafeStay is a CAP-aligned consumer of alerts, not a certified CAP issuer. Anything it computes itself is labelled as an estimate.
 
-## 6. Run locally
-
-```bash
-git clone <your-repo-url> && cd safestay
-python3 -m http.server 8000      # or: npx serve .
-# open http://localhost:8000
-```
-Use a local server (not `file://`) so geolocation and the service worker work. Try `http://localhost:8000/?demo=quake` for an instant simulation (`flood`, `cyclone`, `quake`, `fire`, `heat`).
-
-## 7. Deploy (free)
-
-See the step-by-step guide in the project hand-off notes: GitHub Pages → *Settings → Pages → Deploy from branch → `main` / root*. Any static host works (Netlify, Cloudflare Pages, Vercel). HTTPS is required for GPS and the service worker; all of these provide it.
-
-## 8. Project structure
+## Project structure
 
 ```
 index.html              app shell
-css/style.css           responsive, dark-mode aware, low-bandwidth styling
-js/i18n.js              5 languages: UI, hazard names, alert templates, step-by-step guides
-js/i18n2.js             extra strings: cold / dust / cyclone, city search, map UI
-js/map.js               lazy-loaded Leaflet map, safe-place ranking, hazard overlays, rain radar
-js/cap.js               CAP 1.2: normalised alert model, XML export, feed parser
-js/sources.js           data fetchers + hazard analysis + ETA logic + emergency numbers
-js/app.js               UI, low-bandwidth mode, family broadcast, demo scenarios, caching
-sw.js                   service worker (offline app shell)
-manifest.webmanifest    installable PWA
-icon.svg
-demo/                   demo video goes here
+css/style.css           layout, dark mode, low-bandwidth styling
+js/i18n.js              translations, hazard names, alert text, instruction steps
+js/cap.js               CAP model, XML export, feed parser
+js/sources.js           data fetching, hazard analysis, arrival time logic
+js/app.js               interface, low-bandwidth mode, family check-in, demo scenarios, caching
+sw.js                   service worker for offline use
+manifest.webmanifest    PWA manifest
+icon.svg                app icon
+demo/                   demo video
 ```
 
-## 8b. Version 2 additions
+## Running locally
 
-* **Any city worldwide:** type-ahead search (Open-Meteo geocoding) replaces the 12-city list; GPS positions get a reverse-geocoded name. The 12 built-in cities remain as an offline fallback.
-* **More hazards:** extreme cold, dust/sandstorm, and cyclone/hurricane/typhoon as its own type (with 5-language guides). `CAP.guess` maps official alert names to them.
-* **Map view:** you, the ranked safe places (★ = recommended, with a walking route), hazard positions, cyclone track + straight-line projection, wildfire downwind spread, earthquake/tsunami wave fronts, nominal forecast areas and an optional rain-radar loop.
-* **Ranking:** candidates from OpenStreetMap (shelters, hospitals, assembly points, community centres, town halls, libraries, plus the higher-ground point) are scored by walking time (OSM route when available, otherwise straight-line × 1.3 at 5 km/h) plus a hazard-specific adjustment: higher ground for flood/tsunami/cyclone, open assembly points for earthquakes, indoor buildings for heat/cold/dust/storm, away from the hazard for fire/volcano/landslide. Weights live in `MAP.adjust()` in `js/map.js`; they are heuristics, not official guidance.
-* **Text first:** the map is built after the text result has rendered; if it cannot load, the text guidance is unaffected.
+Clone or download the repository, then from its root folder run:
 
-## 9. Limitations (we'd rather be upfront)
+```bash
+python3 -m http.server 8000
+```
 
-* **Estimates, not warnings.** ETAs are modelled from public data; always follow local authorities. USGS data lags real events by minutes, so quake "countdowns" are mainly useful for distant events and tsunami arrival; for local shaking use national early-warning systems.
-* **EONET coverage is partial** (large, curated events). Planned: NASA FIRMS active-fire pixels.
-* **Family broadcast needs a tap** (web apps can't send SMS silently). SMS/WhatsApp links are pre-filled.
-* **Translations** are prototype quality — have native speakers review before real deployment.
-* Shelter data depends on OpenStreetMap completeness; it may be empty in some regions. "Cooling/warming centres" have no standard OSM tag, so indoor public buildings are used as a proxy.
-* Hazard progression on the map is a straight-line extrapolation from recent track points or wind speed, not an official forecast cone. Weather-type alerts are drawn as a nominal circle around the point forecast, not a real footprint.
-* Dust forecasts come from a coarse global model and can miss local sandstorms. GDACS (official multi-hazard feed) is still on the roadmap.
-* The public routing, tile and radar servers are fair-use; for production traffic use a paid or self-hosted provider.
+Open http://localhost:8000 in a browser. A local server is needed (opening the file directly will not work) because geolocation and the service worker require http or https.
 
-## 10. Roadmap
+To try a simulation straight away, open `http://localhost:8000/?demo=quake`. The other scenarios are `flood`, `cyclone`, `fire` and `heat`.
 
-Official alert feeds per country (India NDMA *Sachet*, MeteoAlarm, JMA) via a small CORS proxy · push notifications · live location sharing with a lightweight backend · crowd-sourced "road flooded" reports · GDACS and NASA FIRMS integration · more languages · accessibility (voice read-out).
+## Deployment
 
-## 11. Team
+The app is a set of static files. To host it on GitHub Pages: push to the `main` branch, open Settings, then Pages, choose "Deploy from a branch", and select `main` and `/ (root)`. Netlify, Cloudflare Pages and Vercel also work with no configuration.
 
-`<names, college>` — IIITDM Kancheepuram · Built during the hackathon. Licence: MIT.
+## Known limitations
+
+- Arrival times are estimates. USGS data arrives a few minutes after an event, so the earthquake countdown is most useful for distant quakes and tsunami arrival, not for shaking right under your feet. National early-warning systems are the right tool for that.
+- NASA EONET only lists larger, curated events, so smaller wildfires will not appear.
+- The family check-in needs a tap to send. A web page cannot send an SMS in the background.
+- Shelter results depend on how complete OpenStreetMap is in that area and may be empty in some regions.
+- The translations have not been reviewed by native speakers.
+- Official local alert feeds are only integrated for the US. Other countries are supported through the custom CAP feed setting.
+
+## Future work
+
+- Native alert feeds for more countries (India's NDMA Sachet, MeteoAlarm in Europe, Japan's JMA)
+- Push notifications
+- Live location sharing with a small backend
+- Crowd-sourced road and flood reports
+- NASA FIRMS active-fire data and GDACS events
+- More languages and voice read-out for accessibility
+
+## Author
+
+Saravana Kadir
+Mahalis Rayhan
