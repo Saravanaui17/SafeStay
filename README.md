@@ -136,4 +136,5 @@ The app is a set of static files. To host it on GitHub Pages: push to the `main`
 ## Author
 
 Saravana Kadir
+
 Mahalis Rayhan
