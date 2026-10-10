@@ -38,14 +38,14 @@ const SRC = {
     return SRC.j("https://api.weather.gov/alerts/active?point=" + lat.toFixed(4) + "," + lon.toFixed(4));
   },
   async customCap() { const u = localStorage.getItem("ss_cap"); return u ? SRC.txt(u) : null; },
-  async shelters(lat, lon) {
-    const a = "(around:5000," + lat.toFixed(5) + "," + lon.toFixed(5) + ")";
-    const q = "[out:json][timeout:15];(nwr" + a + '["amenity"~"^(shelter|hospital)$"];nwr' + a + '["emergency"="assembly_point"];);out center 40;';
-    const o = await SRC.j("https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(q), 18000);
+  async shelters(lat, lon) { // candidate safe places from OpenStreetMap; map.js ranks them by walking time + hazard fit
+    const a = "(around:6000," + lat.toFixed(5) + "," + lon.toFixed(5) + ")";
+    const q = "[out:json][timeout:20];(nwr" + a + '["amenity"~"^(shelter|hospital|community_centre|townhall|library)$"];nwr' + a + '["emergency"~"^(assembly_point|shelter)$"];);out center 200;';
+    const o = await SRC.j("https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(q), 20000);
     return o.elements.map(e => {
       const la = e.lat ?? (e.center && e.center.lat), lo = e.lon ?? (e.center && e.center.lon), t = e.tags || {};
-      return { name: t.name || t["name:en"] || t.amenity || "Assembly point", kind: t.amenity || t.emergency, lat: la, lon: lo, d: SRC.hav(lat, lon, la, lo) };
-    }).filter(x => x.lat != null).sort((p, q) => p.d - q.d).slice(0, 5);
+      return { name: t.name || t["name:en"] || "", kind: t.amenity || t.emergency, lat: la, lon: lo, d: SRC.hav(lat, lon, la, lo) };
+    }).filter(x => x.lat != null).sort((p, q) => p.d - q.d).slice(0, 20);
   },
   async higher(lat, lon, elev) { // sample ground 1.5 km and 3 km away in 8 directions, suggest the highest
     const pts = []; for (let b = 0; b < 360; b += 45) for (const r of [1.5, 3]) pts.push([b, r, ...SRC.dest(lat, lon, b, r)]);
@@ -64,18 +64,21 @@ const SRC = {
     const rain = S("precipitation"), gust = S("wind_gusts_10m"), app = S("apparent_temperature"), rh = S("relative_humidity_2m"),
       tmp = S("temperature_2m"), ws = S("wind_speed_10m"), wc = S("weather_code"), elev = w.elevation;
     const lvl = (v, th) => th.filter(t => v >= t).length; // 0..4
+    const lvlLow = (v, th) => th.filter(t => v <= t).length; // for cold: 0..4
     const roll = rain.map((_, i) => rain.slice(Math.max(0, i - 23), i + 1).reduce((a, b) => a + b, 0));
     const lows = elev != null && elev < 10;
     const L = {
       flood: rain.map((v, i) => { let l = Math.max(lvl(v, [5, 10, 20, 40]), lvl(roll[i], [75, 120, 200, 300])); if (l > 0 && lows) l = Math.min(4, l + 1); return l; }),
       storm: gust.map((v, i) => Math.max(lvl(v, [60, 90, 120, 160]), wc[i] >= 96 ? 2 : wc[i] >= 95 ? 1 : 0)),
       heat: app.map(v => lvl(v, [38, 41, 46, 52])),
+      cold: app.map(v => lvlLow(v, [-15, -25, -35, -45])),
       fire: tmp.map((t, i) => (t >= 38 && rh[i] <= 15 && ws[i] >= 40) ? 3 : (t >= 35 && rh[i] <= 20 && ws[i] >= 30) ? 2 : (t >= 30 && rh[i] <= 30 && ws[i] >= 20) ? 1 : 0)
     };
     const P = {
       flood: () => ({ tpl: "t_flood", params: { p: Math.round(Math.max(...rain)), s: Math.round(Math.max(...roll)) } }),
       storm: () => ({ tpl: "t_storm", params: { g: Math.round(Math.max(...gust)) } }),
       heat: () => ({ tpl: "t_heat", params: { a: Math.round(Math.max(...app)) } }),
+      cold: () => ({ tpl: "t_cold", params: { a: Math.round(Math.min(...app)) } }),
       fire: () => { const i = L.fire.indexOf(Math.max(...L.fire)); return { tpl: "t_firewx", params: { h: Math.round(rh[i]), w: Math.round(ws[i]) } }; }
     };
     const alerts = [];
@@ -93,6 +96,26 @@ const SRC = {
     return { alerts, elev, wind: { speed: ws[0], dir: H.wind_direction_10m[i0] } };
   },
 
+  /* ---------- analysis: Open-Meteo air-quality API -> dust / sandstorm ---------- */
+  air(lat, lon) {
+    return SRC.j("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) +
+      "&hourly=dust&forecast_days=2&timezone=auto");
+  },
+  fromAir(w, lat, lon) {
+    const H = w.hourly; if (!H || !H.dust) return [];
+    const off = (w.utc_offset_seconds || 0) * 1000, now = Date.now(), T = H.time.map(x => Date.parse(x + ":00Z") - off);
+    let i0 = T.findIndex(t => t + 3600e3 > now); if (i0 < 0) i0 = 0;
+    const dust = H.dust.slice(i0, i0 + 48).map(v => v == null ? 0 : v);
+    const lv = dust.map(v => [200, 500, 1000, 2000].filter(t => v >= t).length); // µg/m³ of mineral dust
+    const best = Math.max(0, ...lv); if (best < 1) return [];
+    const on = lv.findIndex(x => x >= 1), pk = lv.indexOf(best), last = lv.map(x => x >= 1).lastIndexOf(true), etaMs = Math.max(0, T[i0 + on] - now);
+    return [CAP.make({
+      hazard: "dust", tpl: "t_dust", params: { u: Math.round(Math.max(...dust)) }, severity: CAP.SEV[best], urgency: CAP.urgency(etaMs),
+      certainty: best >= 2 && on < 24 ? "Likely" : "Possible", etaAt: now + etaMs, active: etaMs === 0, peakAt: pk > on ? T[i0 + pk] : null,
+      expiresAt: T[i0 + last] + 3600e3, estimated: false, source: "Open-Meteo air quality (CAMS)", areaDesc: "Your location", radiusKm: 25, lat, lon
+    })];
+  },
+
   /* ---------- analysis: USGS earthquakes (+ tsunami possibility) ---------- */
   fromUSGS(g, lat, lon, elev) {
     const out = [], now = Date.now();
@@ -107,7 +130,7 @@ const SRC = {
       else if ((m >= 5 && d < 100) || (m >= 6 && d < 300) || (m >= 4.5 && d < 30)) lv = 2;
       if (lv < 3 && age > 6 * 3600e3) continue;
       const hyp = Math.hypot(d, Math.max(0, dep || 0)), arrive = p.time + hyp / 3.5 * 1000, left = arrive - now; // S-wave ~3.5 km/s
-      const base = { lat, lon, estimated: true, source: "USGS", areaDesc: "Your location", radiusKm: Math.round(d) + 10, bearing: SRC.bearing(lat, lon, la, lo), distKm: d };
+      const base = { lat, lon, estimated: true, source: "USGS", areaDesc: "Your location", radiusKm: Math.round(d) + 10, bearing: SRC.bearing(lat, lon, la, lo), distKm: d, evLat: la, evLon: lo, evAt: p.time };
       out.push(CAP.make(Object.assign({
         hazard: "quake", tpl: "t_quake", params: { m: m.toFixed(1), d: Math.round(d), pl: p.place || "" }, severity: CAP.SEV[lv],
         certainty: "Observed", urgency: left > 0 ? CAP.urgency(left) : (age < 3600e3 ? "Immediate" : "Past"),
@@ -132,7 +155,9 @@ const SRC = {
       const gs = e.geometry || []; if (!gs.length) continue;
       const cat = (e.categories && e.categories[0] && e.categories[0].id) || "", last = gs[gs.length - 1], [la, lo] = pt(last);
       const d = SRC.hav(lat, lon, la, lo), toEv = SRC.bearing(lat, lon, la, lo), evToUser = SRC.bearing(la, lo, lat, lon), c = SRC.compass(toEv);
-      const base = { lat, lon, estimated: true, source: "NASA EONET", areaDesc: "Your location", bearing: toEv, distKm: d, params: { n: e.title, d: Math.round(d), c }, radiusKm: Math.round(d) + 10 };
+      const base = { lat, lon, estimated: true, source: "NASA EONET", areaDesc: "Your location", bearing: toEv, distKm: d, params: { n: e.title, d: Math.round(d), c }, radiusKm: Math.round(d) + 10,
+        evLat: la, evLon: lo, track: cat === "severeStorms" ? gs.slice(-8).map(g => { const q = pt(g); return [q[0], q[1], Date.parse(g.date)]; }) : null,
+        wind: cat === "wildfires" && wind ? { speed: wind.speed, dir: wind.dir } : null };
       let hz, tpl, lv, etaMs = null;
       if (cat === "wildfires") {
         if (d > 100) continue; hz = "fire"; tpl = "t_fire_ev"; lv = d < 5 ? 4 : d < 15 ? 3 : d < 40 ? 2 : 1;
@@ -140,7 +165,7 @@ const SRC = {
           etaMs = Math.max(0, (d - 2) / Math.max(0.3, 0.03 * wind.speed) * 3600e3); if (etaMs > 72 * 3600e3) etaMs = null; // crude: spread ≈ 3% of wind speed
         }
       } else if (cat === "severeStorms") {
-        if (d > 800) continue; hz = "storm"; tpl = "t_storm_ev"; const mag = last.magnitudeValue || 0;
+        if (d > 800) continue; hz = "cyclone"; tpl = "t_storm_ev"; const mag = last.magnitudeValue || 0;
         lv = d <= 300 ? (mag >= 96 ? 4 : mag >= 64 ? 3 : 2) : d <= 600 ? (mag >= 64 ? 2 : 1) : 1;
         if (gs.length >= 2) {
           const prev = gs[gs.length - 2], [pa, po] = pt(prev), dt = (Date.parse(last.date) - Date.parse(prev.date)) / 3600e3;
@@ -171,6 +196,22 @@ const SRC = {
         headline: p.headline || p.event, instruction: p.instruction || "", areaDesc: p.areaDesc || "", lat, lon
       });
     });
+  },
+
+  /* ---------- places: worldwide city search, reverse geocoding, elevations, walking routes ---------- */
+  async geocode(q, lang) { // Open-Meteo geocoding: free, keyless, worldwide
+    const j = await SRC.j("https://geocoding-api.open-meteo.com/v1/search?name=" + encodeURIComponent(q) + "&count=8&format=json&language=" + encodeURIComponent(lang || "en"), 8000);
+    return (j.results || []).map(r => ({ name: [r.name, r.admin1, r.country].filter((x, i, a) => x && a.indexOf(x) === i).join(", "), lat: r.latitude, lon: r.longitude }));
+  },
+  async reverse(lat, lon, lang) { // best-effort place name for GPS positions (BigDataCloud client-side endpoint)
+    const j = await SRC.j("https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=" + lat.toFixed(4) + "&longitude=" + lon.toFixed(4) + "&localityLanguage=" + encodeURIComponent(lang || "en"), 8000);
+    return [j.city || j.locality, j.principalSubdivision, j.countryName].filter((x, i, a) => x && a.indexOf(x) === i).join(", ");
+  },
+  async elevs(pts) { const j = await SRC.j("https://api.open-meteo.com/v1/elevation?latitude=" + pts.map(p => p.lat.toFixed(4)).join(",") + "&longitude=" + pts.map(p => p.lon.toFixed(4)).join(",")); return j.elevation; },
+  async route(a, b) { // walking route on OpenStreetMap data (public routing server, fair use). Time is computed by map.js from the distance.
+    const j = await SRC.j("https://routing.openstreetmap.de/routed-foot/route/v1/foot/" + a.lon.toFixed(5) + "," + a.lat.toFixed(5) + ";" + b.lon.toFixed(5) + "," + b.lat.toFixed(5) + "?overview=simplified&geometries=geojson", 9000);
+    const r = j.routes && j.routes[0]; if (!r) throw new Error("no route");
+    return { km: r.distance / 1000, geom: r.geometry.coordinates.map(p => [p[1], p[0]]) };
   },
 
   /* ---------- emergency number (offline lookup; 112 works on most GSM networks worldwide) ---------- */

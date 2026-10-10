@@ -8,12 +8,12 @@ const h = (t, a, ...c) => {
   return e;
 };
 const store = { get: (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* storage may be blocked */ } } };
-const EMO = { flood: "🌧️", storm: "🌀", quake: "🌍", tsunami: "🌊", fire: "🔥", heat: "🌡️", volcano: "🌋", landslide: "⛰️", general: "⚠️" };
+const EMO = { flood: "🌧️", storm: "⛈️", cyclone: "🌀", quake: "🌍", tsunami: "🌊", fire: "🔥", heat: "🌡️", cold: "🥶", dust: "🌪️", volcano: "🌋", landslide: "⛰️", general: "⚠️" };
 const CITIES = [["Chennai", 13.0827, 80.2707], ["Mumbai", 19.076, 72.8777], ["Goa", 15.2993, 74.124], ["Kochi", 9.9312, 76.2673], ["Delhi", 28.6139, 77.209], ["Bangkok", 13.7563, 100.5018], ["Manila", 14.5995, 120.9842], ["Tokyo", 35.6762, 139.6503], ["Los Angeles", 34.0522, -118.2437], ["Miami", 25.7617, -80.1918], ["Istanbul", 41.0082, 28.9784], ["Jakarta", -6.2088, 106.8456]];
 
 const S = {
   lang: store.get("ss_lang", (LANGS[(navigator.language || "en").slice(0, 2)] ? (navigator.language || "en").slice(0, 2) : "en")),
-  pos: null, data: null, demo: "", busy: false, kind: "status", guide: "flood"
+  pos: null, data: null, demo: "", busy: false, pending: false, mapOn: false, place: store.get("ss_place", ""), kind: "status", guide: "flood"
 };
 const tr = k => (I18N[S.lang] && I18N[S.lang][k]) ?? I18N.en[k] ?? k;
 const trN = (g, k) => (I18N[S.lang][g] && I18N[S.lang][g][k]) ?? I18N.en[g][k] ?? k;
@@ -46,46 +46,60 @@ const hhmm = t => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: 
 const emNum = () => (S.pos ? SRC.emergency(S.pos.lat, S.pos.lon) : "112");
 
 /* ---------- cache ---------- */
-function saveCache() { const D = S.data; if (D && !D.sim) store.set("ss_cache", JSON.stringify({ pos: S.pos, ts: D.ts, alerts: D.alerts, shelters: D.shelters, higher: D.higher })); }
+function saveCache() { const D = S.data; if (D && !D.sim) store.set("ss_cache", JSON.stringify({ pos: S.pos, ts: D.ts, alerts: D.alerts, shelters: D.shelters, higher: D.higher, ranked: D.ranked })); }
 function loadCache() { try { return JSON.parse(store.get("ss_cache", "null")); } catch (e) { return null; } }
 
 /* ---------- data refresh ---------- */
 function setStatus(t) { $("#status").textContent = t; }
 async function refresh() {
-  if (!S.pos || S.busy) return;
+  if (!S.pos) return;
+  if (S.busy) { S.pending = true; return; } // position changed mid-fetch: run again right after
   const { lat, lon } = S.pos, low = isLow(); S.busy = true; S.demo = ""; $("#demo").value = "";
   setStatus(tr("loading")); SRC.timeout = low ? 20000 : 12000;
   const t = p => p.then(v => ({ ok: 1, v }), e => ({ ok: 0, e }));
-  const names = ["Open-Meteo", "USGS", "NASA EONET", "NWS", "CAP feed"];
-  const R = await Promise.all([t(SRC.weather(lat, lon, low)), t(SRC.usgs(low)), t(SRC.eonet(lat, lon, low)), t(SRC.nws(lat, lon)), t(SRC.customCap())]);
-  const [w, q, e, n, c] = R, alerts = []; let elev = null, wind = null;
+  const names = ["Open-Meteo", "USGS", "NASA EONET", "NWS", "CAP feed", "Open-Meteo air quality"];
+  const R = await Promise.all([t(SRC.weather(lat, lon, low)), t(SRC.usgs(low)), t(SRC.eonet(lat, lon, low)), t(SRC.nws(lat, lon)), t(SRC.customCap()), t(SRC.air(lat, lon))]);
+  const [w, q, e, n, c, aq] = R, alerts = []; let elev = null, wind = null;
   if (w.ok) { const r = SRC.fromWeather(w.v, lat, lon); alerts.push(...r.alerts); elev = r.elev; wind = r.wind; }
   if (q.ok) alerts.push(...SRC.fromUSGS(q.v, lat, lon, elev));
   if (e.ok && e.v) alerts.push(...SRC.fromEONET(e.v, lat, lon, wind));
   if (n.ok && n.v) alerts.push(...SRC.fromNWS(n.v, lat, lon));
+  if (aq.ok && aq.v) alerts.push(...SRC.fromAir(aq.v, lat, lon));
   if (c.ok && c.v) { try { alerts.push(...CAP.parse(c.v, lat, lon)); } catch (x) { c.ok = 0; } }
   const tried = R.map((r, i) => [r, i]).filter(([r]) => !r.ok || r.v != null), bad = tried.filter(([r]) => !r.ok).map(([, i]) => names[i]);
   if (!w.ok && !q.ok && !e.ok) { // fully offline / blocked
-    S.busy = false; const ca = loadCache();
+    S.busy = false; if (S.pending) { S.pending = false; refresh(); return; } const ca = loadCache();
     if (ca) { S.data = Object.assign({ sim: false }, ca); setStatus(tr("offline") + " " + hhmm(ca.ts)); } else setStatus(tr("offline_none"));
     renderOut(); return;
   }
   alerts.forEach(a => { a.lat = lat; a.lon = lon; });
   alerts.sort((a, b) => CAP.sevIdx(b.severity) - CAP.sevIdx(a.severity) || ((a.etaAt || Infinity) - (b.etaAt || Infinity)));
-  S.data = { alerts, shelters: [], higher: null, ts: Date.now(), elev, sim: false };
+  S.data = { alerts, shelters: [], higher: null, ranked: null, ts: Date.now(), elev, sim: false };
   setStatus("✓ " + lat.toFixed(2) + ", " + lon.toFixed(2) + " · " + tr("updated") + " " + hhmm(S.data.ts) + " · " + (tried.length - bad.length) + "/" + tried.length + " " + tr("sources") + (bad.length ? " · " + bad.join(", ") + " " + tr("failed") : "") + (low ? " · 🐢" : ""));
   saveCache(); renderOut(); S.busy = false;
-  if (!low) { // slower extras are fetched after the main result is already on screen
-    const need = alerts.some(a => ["flood", "tsunami", "storm"].includes(a.hazard)) && elev != null;
-    const [s, g] = await Promise.all([t(SRC.shelters(lat, lon)), need ? t(SRC.higher(lat, lon, elev)) : Promise.resolve({ ok: 0 })]);
-    if (S.data && !S.data.sim && S.pos.lat === lat) { if (s.ok) S.data.shelters = s.v; if (g.ok) S.data.higher = g.v; saveCache(); renderOut(); }
-  }
+  if (S.pending) { S.pending = false; refresh(); return; }
+  if (!low) await extras(); // slower extras are fetched after the main result is already on screen
 }
-function setPos(lat, lon) { S.pos = { lat, lon }; store.set("ss_pos", JSON.stringify(S.pos)); refresh(); }
+/* nearby safe places (+ higher ground), then ranking by walking time and hazard type; re-renders as results arrive */
+async function extras() {
+  const D = S.data; if (!D || D.sim || !S.pos) return;
+  const { lat, lon } = S.pos, t = p => p.then(v => ({ ok: 1, v }), e => ({ ok: 0, e }));
+  const need = D.alerts.some(a => ["flood", "tsunami", "storm", "cyclone"].includes(a.hazard)) && D.elev != null;
+  const [s, g] = await Promise.all([t(SRC.shelters(lat, lon)), need ? t(SRC.higher(lat, lon, D.elev)) : Promise.resolve({ ok: 0 })]);
+  if (S.data !== D || S.pos.lat !== lat) return; // a newer refresh replaced this one
+  if (s.ok) D.shelters = s.v; if (g.ok) D.higher = g.v;
+  renderOut();
+  try { D.ranked = await MAP.rank(D, S.pos, { route: true, elev: true }); } catch (e) { /* the nearest-first list stays */ }
+  if (S.data === D && S.pos.lat === lat) { saveCache(); renderOut(); }
+}
+function setPos(lat, lon, name) { S.pos = { lat, lon }; S.place = name || ""; store.set("ss_pos", JSON.stringify(S.pos)); store.set("ss_place", S.place); $("#city").value = S.place; refresh(); }
 function locate() {
   if (!navigator.geolocation) { setStatus(tr("geo_denied")); return; }
   setStatus(tr("locating"));
-  navigator.geolocation.getCurrentPosition(p => setPos(p.coords.latitude, p.coords.longitude), () => {
+  navigator.geolocation.getCurrentPosition(p => {
+    const la = p.coords.latitude, lo = p.coords.longitude; setPos(la, lo);
+    SRC.reverse(la, lo, S.lang).then(n => { if (n && S.pos && S.pos.lat === la) { S.place = n; store.set("ss_place", n); $("#city").value = n; } }, () => { });
+  }, () => {
     const ca = loadCache(); if (ca) { S.pos = ca.pos; S.data = Object.assign({ sim: false }, ca); setStatus(tr("offline") + " " + hhmm(ca.ts)); renderOut(); } else setStatus(tr("geo_denied"));
   }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 });
 }
@@ -94,24 +108,36 @@ function locate() {
 function runDemo(kind) {
   if (!kind) { S.demo = ""; S.data = null; if (S.pos) refresh(); else renderOut(); return; }
   S.demo = kind; const b = S.pos || { lat: 13.0827, lon: 80.2707 }, now = Date.now(), H = 3600e3;
+  const at = (brg, km) => { const p = SRC.dest(b.lat, b.lon, brg, km); return { evLat: p[0], evLon: p[1], bearing: brg, distKm: km }; };
   const mk = o => CAP.make(Object.assign({ sim: true, lat: b.lat, lon: b.lon, source: "SafeStay demo", estimated: true, areaDesc: "Demo location" }, o)), A = [];
   if (kind === "flood") A.push(mk({ hazard: "flood", tpl: "t_flood", params: { p: 34, s: 165 }, severity: "Severe", certainty: "Likely", etaAt: now + 2.5 * H, peakAt: now + 6 * H }));
-  if (kind === "cyclone") A.push(
-    mk({ hazard: "storm", tpl: "t_storm_ev", params: { n: "Cyclone Demo", d: 420, c: "SE" }, severity: "Severe", certainty: "Likely", etaAt: now + 9 * H }),
-    mk({ hazard: "storm", tpl: "t_storm", params: { g: 130 }, severity: "Severe", certainty: "Likely", etaAt: now + 11 * H, peakAt: now + 14 * H }),
-    mk({ hazard: "flood", tpl: "t_flood", params: { p: 18, s: 210 }, severity: "Moderate", certainty: "Likely", etaAt: now + 10 * H }));
-  if (kind === "quake") A.push(
-    mk({ hazard: "quake", tpl: "t_quake", params: { m: "7.1", d: 68, pl: "Offshore (demo)" }, severity: "Extreme", certainty: "Observed", urgency: "Immediate", occurredAt: now - 2 * 60e3, source: "USGS (demo)" }),
-    mk({ hazard: "tsunami", tpl: "t_tsu", params: { m: "7.1", d: 68 }, severity: "Severe", certainty: "Possible", etaAt: now + 22 * 60e3 }));
+  if (kind === "cyclone") {
+    const ev = at(135, 420), p0 = SRC.dest(ev.evLat, ev.evLon, 135, 252), p1 = SRC.dest(ev.evLat, ev.evLon, 135, 126); // moving NW towards the user at ~42 km/h
+    A.push(
+      mk(Object.assign({ hazard: "cyclone", tpl: "t_storm_ev", params: { n: "Cyclone Demo", d: 420, c: "SE" }, severity: "Severe", certainty: "Likely", etaAt: now + 10 * H,
+        track: [[p0[0], p0[1], now - 6 * H], [p1[0], p1[1], now - 3 * H], [ev.evLat, ev.evLon, now]] }, ev)),
+      mk({ hazard: "storm", tpl: "t_storm", params: { g: 130 }, severity: "Severe", certainty: "Likely", etaAt: now + 11 * H, peakAt: now + 14 * H }),
+      mk({ hazard: "flood", tpl: "t_flood", params: { p: 18, s: 210 }, severity: "Moderate", certainty: "Likely", etaAt: now + 10 * H }));
+  }
+  if (kind === "quake") {
+    const ev = at(100, 68);
+    A.push(
+      mk(Object.assign({ hazard: "quake", tpl: "t_quake", params: { m: "7.1", d: 68, pl: "Offshore (demo)" }, severity: "Extreme", certainty: "Observed", urgency: "Immediate", occurredAt: now - 2 * 60e3, source: "USGS (demo)" }, ev, { evAt: now - 2 * 60e3 })),
+      mk(Object.assign({ hazard: "tsunami", tpl: "t_tsu", params: { m: "7.1", d: 68 }, severity: "Severe", certainty: "Possible", etaAt: now + 22 * 60e3 }, ev, { evAt: now - 2 * 60e3 })));
+  }
   if (kind === "fire") A.push(
-    mk({ hazard: "fire", tpl: "t_fire_ev", params: { n: "Hill Fire (demo)", d: 12, c: "NE" }, severity: "Severe", certainty: "Observed", etaAt: now + 2 * H, bearing: 45, source: "NASA EONET (demo)" }),
+    mk(Object.assign({ hazard: "fire", tpl: "t_fire_ev", params: { n: "Hill Fire (demo)", d: 12, c: "NE" }, severity: "Severe", certainty: "Observed", etaAt: now + 2 * H, source: "NASA EONET (demo)", wind: { speed: 60, dir: 45 } }, at(45, 12))),
     mk({ hazard: "fire", tpl: "t_firewx", params: { h: 14, w: 38 }, severity: "Moderate", etaAt: now + 0, active: true }));
   if (kind === "heat") A.push(mk({ hazard: "heat", tpl: "t_heat", params: { a: 47 }, severity: "Severe", certainty: "Likely", active: true, etaAt: null }));
-  const sh = [["Govt. Relief Shelter (demo)", 0.9, 30], ["Community Hall (demo)", 1.6, 120], ["General Hospital (demo)", 3.2, 200]].map(x => { const p = SRC.dest(b.lat, b.lon, x[2], x[1]); return { name: x[0], lat: p[0], lon: p[1], d: x[1], kind: "shelter" }; });
+  if (kind === "cold") A.push(mk({ hazard: "cold", tpl: "t_cold", params: { a: -38 }, severity: "Severe", certainty: "Likely", active: true, etaAt: null }));
+  if (kind === "dust") A.push(mk({ hazard: "dust", tpl: "t_dust", params: { u: 850 }, severity: "Severe", certainty: "Likely", etaAt: now + 1.5 * H, peakAt: now + 4 * H, radiusKm: 25 }));
+  const sh = [["Govt. Relief Shelter (demo)", 0.9, 30, "shelter", 12], ["Community Hall (demo)", 1.6, 120, "community_centre", 3], ["General Hospital (demo)", 3.2, 200, "hospital", -2],
+    ["City Ground (demo)", 1.2, 300, "assembly_point", 25], ["Public Library (demo)", 2.0, 250, "library", 0]].map(x => { const p = SRC.dest(b.lat, b.lon, x[2], x[1]); return { name: x[0], lat: p[0], lon: p[1], d: x[1], kind: x[3], gain: x[4] }; });
   const hp = SRC.dest(b.lat, b.lon, 315, 1.5);
-  S.data = { alerts: A, shelters: sh, higher: ["flood", "cyclone", "quake"].includes(kind) ? { brg: 315, d: 1.5, gain: 22, lat: hp[0], lon: hp[1] } : null, ts: now, sim: true };
+  S.data = { alerts: A, shelters: sh, higher: ["flood", "cyclone", "quake"].includes(kind) ? { brg: 315, d: 1.5, gain: 22, lat: hp[0], lon: hp[1] } : null, ranked: null, ts: now, sim: true };
   if (!S.pos) S.pos = { lat: b.lat, lon: b.lon };
   setStatus(tr("sim")); renderOut();
+  const D = S.data; MAP.rank(D, S.pos, {}).then(r => { if (S.data === D) { D.ranked = r; renderOut(); } }, () => { });
 }
 
 /* ---------- views ---------- */
@@ -152,13 +178,23 @@ function copyText(txt, btn) {
   if (navigator.clipboard) navigator.clipboard.writeText(txt).then(done, done); else { const t = h("textarea"); t.value = txt; document.body.append(t); t.select(); try { document.execCommand("copy"); } catch (e) { /* ignore */ } t.remove(); done(); }
 }
 
+const NEAR_KINDS = ["shelter", "hospital", "assembly_point", "community_centre"];
+const placeName = x => x.kind === "higher" ? tr("higher_pt") : (x.name || tr("kind_" + x.kind));
 function escapeCard(D) {
   const top = D.alerts[0], rows = [];
   if (top && top.bearing != null && ["fire", "volcano"].includes(top.hazard)) rows.push(h("div", { class: "row1" }, "🧭 " + fmt(tr("away"), { c: SRC.compass((top.bearing + 180) % 360) })));
   if (D.higher && S.pos) rows.push(h("div", { class: "row1" }, "⛰️ " + fmt(tr("higher"), { d: D.higher.d, c: SRC.compass(D.higher.brg), g: D.higher.gain }), " ", h("a", { href: mapsLink(S.pos, D.higher), target: "_blank", rel: "noopener" }, tr("dir") + " ↗")));
-  if (D.shelters && D.shelters.length) {
-    rows.push(h("div", { class: "mu", style: "margin-top:8px" }, tr("shelters")));
-    D.shelters.forEach(x => rows.push(h("div", { class: "sh" }, h("div", null, x.name, h("div", { class: "mu" }, x.d.toFixed(1) + " km · ~" + Math.round(x.d / 5 * 60) + " " + tr("walk"))), h("a", { href: mapsLink(S.pos, x), target: "_blank", rel: "noopener" }, tr("dir") + " ↗"))));
+  const ranked = D.ranked && D.ranked.length ? D.ranked : null; let list = ranked;
+  if (!list && D.shelters && D.shelters.length) { // before ranking finishes: nearest few, straight-line estimate
+    const near = D.shelters.filter(x => NEAR_KINDS.includes(x.kind));
+    list = (near.length ? near : D.shelters).slice(0, 5).map(x => Object.assign({}, x, { mins: Math.round(x.d * 1.3 / 5 * 60), routed: false }));
+  }
+  if (list && list.length) {
+    rows.push(h("div", { class: "mu", style: "margin-top:8px" }, tr(ranked ? "ranked_title" : "shelters")));
+    list.forEach((x, i) => rows.push(h("div", { class: "sh" },
+      h("div", null, (ranked && i === 0 ? "⭐ " : "") + placeName(x), h("div", { class: "mu" },
+        tr("kind_" + x.kind) + " · " + x.d.toFixed(1) + " km · ~" + x.mins + " " + tr("walk") + " (" + tr(x.routed ? "route_tag" : "est_tag") + ")" + (ranked ? " · " + tr(x.why) : ""))),
+      h("a", { href: mapsLink(S.pos, x), target: "_blank", rel: "noopener" }, tr("dir") + " ↗"))));
   }
   return rows.length ? h("section", { class: "card" }, h("h3", null, "🏃 " + tr("escape")), rows) : null;
 }
@@ -217,27 +253,59 @@ function renderOut() {
     A.forEach((a, i) => out.append(alertCard(a, i === 0)));
     const e = escapeCard(D); if (e) out.append(e);
   }
+  addMap(out);
   out.append(emBtn(), familyCard(), guidesCard());
   out.append(h("details", { class: "card" }, h("summary", null, "⚙️ " + tr("settings")), h("div", { class: "mu" }, tr("cap_url")),
     (() => { const i = h("input", { value: store.get("ss_cap", ""), placeholder: "https://…/alert.xml", "aria-label": tr("cap_url") }); return h("div", { class: "row" }, i, h("button", { onclick: e => { store.set("ss_cap", i.value.trim()); e.target.textContent = tr("saved"); } }, tr("save"))); })()));
   out.append(h("div", { class: "mu foot" }, tr("footer")));
 }
+/* map: text result is already in the DOM; Leaflet loads afterwards (never in low-bandwidth mode unless the person asks) */
+function addMap(out) {
+  if (!S.pos || !S.data) return;
+  if (isLow() && !S.mapOn) { out.append(MAP.liteCard()); return; }
+  out.append(MAP.card()); MAP.schedule();
+}
 const emBtn = () => h("a", { class: "sos", href: "tel:" + emNum().split(" ")[0] }, "📞 " + tr("emergency") + ": " + emNum());
+
+/* ---------- worldwide city search (Open-Meteo geocoding; the 12 built-in cities are the offline fallback) ---------- */
+function initSearch() {
+  const inp = $("#city"), ul = $("#cres"); let tmr = 0, seq = 0;
+  const close = () => { ul.textContent = ""; ul.hidden = true; };
+  const pick = it => { close(); if (S.demo) { S.demo = ""; $("#demo").value = ""; } setPos(it.lat, it.lon, it.name); };
+  const show = (items, note) => {
+    ul.textContent = "";
+    items.forEach(it => ul.append(h("li", null, h("button", { type: "button", onclick: () => pick(it) }, it.name))));
+    if (note || !items.length) ul.append(h("li", { class: "mu nores" }, note || tr("city_none")));
+    ul.hidden = false;
+  };
+  const local = q => CITIES.filter(c => c[0].toLowerCase().startsWith(q.toLowerCase())).map(c => ({ name: c[0], lat: c[1], lon: c[2] }));
+  inp.addEventListener("input", () => {
+    clearTimeout(tmr); const q = inp.value.trim(); if (q.length < 2) { close(); return; }
+    tmr = setTimeout(async () => {
+      const my = ++seq;
+      try { const r = await SRC.geocode(q, S.lang); if (my === seq) show(r); } catch (e) { if (my === seq) show(local(q), tr("city_err")); }
+    }, 350);
+  });
+  inp.addEventListener("keydown", e => {
+    if (e.key === "Enter") { const b = ul.querySelector("button"); if (b) { e.preventDefault(); b.click(); } } else if (e.key === "Escape") close();
+  });
+  document.addEventListener("click", e => { if (!e.target.closest(".srch")) close(); });
+}
 
 /* ---------- static controls ---------- */
 function applyStatic() {
   document.documentElement.lang = S.lang;
   $("#tag").textContent = tr("tag"); $("#loc").textContent = tr("locate"); $("#lowl").textContent = tr("low"); $("#lowh").textContent = tr("low_hint");
-  const city = $("#city"); city.textContent = ""; city.append(h("option", { value: "" }, tr("city")), ...CITIES.map(c => h("option", { value: c[1] + "," + c[2] }, c[0])));
+  $("#city").placeholder = tr("city_ph");
   const demo = $("#demo"), cur = S.demo; demo.textContent = "";
-  demo.append(h("option", { value: "" }, tr("demo_none")), ...["flood", "cyclone", "quake", "fire", "heat"].map(k => h("option", { value: k }, tr("demo_lbl") + k)));
+  demo.append(h("option", { value: "" }, tr("demo_none")), ...["flood", "cyclone", "quake", "fire", "heat", "cold", "dust"].map(k => h("option", { value: k }, tr("demo_lbl") + k)));
   demo.value = cur; $("#low").checked = isLow();
 }
 function init() {
   const lang = $("#lang"); Object.keys(LANGS).forEach(k => lang.append(h("option", { value: k }, LANGS[k]))); lang.value = S.lang;
   lang.onchange = e => { S.lang = e.target.value; store.set("ss_lang", S.lang); applyStatic(); renderOut(); };
   $("#loc").onclick = locate;
-  $("#city").onchange = e => { if (e.target.value) { const [a, b] = e.target.value.split(",").map(Number); setPos(a, b); } };
+  initSearch(); $("#city").value = S.place;
   $("#demo").onchange = e => runDemo(e.target.value);
   $("#low").onchange = e => { store.set("ss_low", e.target.checked ? "1" : "0"); applyStatic(); renderOut(); if (S.pos && !S.demo) refresh(); };
   applyStatic();

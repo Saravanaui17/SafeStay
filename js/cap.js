@@ -7,8 +7,8 @@
    with the sender "safestay.app" and are flagged as estimates. */
 const CAP = {
   SEV: ["Unknown", "Minor", "Moderate", "Severe", "Extreme"],
-  CAT: { flood: "Met", storm: "Met", heat: "Health", fire: "Fire", quake: "Geo", tsunami: "Geo", volcano: "Geo", landslide: "Geo", general: "Other" },
-  EVENT: { flood: "Flood / Heavy Rain", storm: "Severe Wind / Storm", heat: "Extreme Heat", fire: "Wildfire", quake: "Earthquake", tsunami: "Tsunami", volcano: "Volcanic Activity", landslide: "Landslide", general: "Hazard" },
+  CAT: { flood: "Met", storm: "Met", cyclone: "Met", cold: "Met", dust: "Met", heat: "Health", fire: "Fire", quake: "Geo", tsunami: "Geo", volcano: "Geo", landslide: "Geo", general: "Other" },
+  EVENT: { flood: "Flood / Heavy Rain", storm: "Severe Wind / Storm", cyclone: "Tropical Cyclone", cold: "Extreme Cold", dust: "Dust Storm / Sandstorm", heat: "Extreme Heat", fire: "Wildfire", quake: "Earthquake", tsunami: "Tsunami", volcano: "Volcanic Activity", landslide: "Landslide", general: "Hazard" },
   sevIdx(s) { return Math.max(0, CAP.SEV.indexOf(s)); },
   esc(s) { return String(s == null ? "" : s).replace(/[<>&'"]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[c])); },
   iso(t) { return new Date(t).toISOString().replace(/\.\d{3}Z$/, "+00:00"); }, // CAP wants an explicit offset
@@ -17,7 +17,9 @@ const CAP = {
     t = (t || "").toLowerCase();
     return /tsunami/.test(t) ? "tsunami" : /earthquake|seismic/.test(t) ? "quake" : /volcan/.test(t) ? "volcano" :
       /landslide|mudslide|debris/.test(t) ? "landslide" : /fire|red flag/.test(t) ? "fire" : /heat/.test(t) ? "heat" :
-      /flood|rain|flash/.test(t) ? "flood" : /storm|wind|hurricane|typhoon|cyclone|tornado|gale|thunder/.test(t) ? "storm" : "general";
+      /freez|frost|blizzard|wind chill|extreme cold|\bcold\b|\bsnow|\bice\b|winter/.test(t) ? "cold" : /dust|sand ?storm|haboob/.test(t) ? "dust" :
+      /flood|rain|flash/.test(t) ? "flood" : /hurricane|typhoon|cyclone|tropical (storm|depression)/.test(t) ? "cyclone" :
+      /storm|wind|tornado|gale|thunder/.test(t) ? "storm" : "general";
   },
   /** Build a normalised alert. `o` must contain at least {hazard, severity}. */
   make(o) {
