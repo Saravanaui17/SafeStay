@@ -33,6 +33,15 @@ a{color:var(--link)}
 .msg,.litepre{white-space:pre-wrap;word-break:break-word;background:var(--bg);border-radius:8px;padding:10px;margin:8px 0;font:14px/1.45 ui-monospace,Menlo,Consolas,monospace}
 .litepre{font-size:15px}
 .ct{display:inline-flex;gap:2px}.ct .x{padding:9px 8px}
+/* city search */
+.row>.srch{position:relative;flex:2;min-width:160px}.srch input{width:100%}
+#cres{position:absolute;z-index:2000;left:0;right:0;margin:4px 0 0;padding:4px;list-style:none;background:var(--card);border:1px solid var(--bd);border-radius:10px;max-height:260px;overflow:auto;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+#cres[hidden]{display:none}#cres button{width:100%;text-align:left;border:0;background:none;padding:9px 8px}#cres .nores{padding:6px 8px}
+/* map */
+.mapbox{height:340px;border-radius:10px;margin:8px 0;isolation:isolate;background:var(--bg)}
+.pin{display:flex;align-items:center;justify-content:center;border-radius:50%;background:#1565c0;color:#fff;font-weight:700;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.pin.rec{background:#1e8e5a;font-size:16px}
+button:disabled{opacity:.45;cursor:default}
 /* low-bandwidth mode: flat, text-first, no decoration */
 body.lite .card,body.lite .acard{border-radius:0}
 body.lite .banner{border-radius:0}

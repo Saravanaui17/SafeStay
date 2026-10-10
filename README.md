@@ -57,7 +57,9 @@ Everything runs **in the browser** — no backend, no accounts, no API keys, no 
 | Earthquake | magnitude × distance rules (e.g. M7+ within 150 km = Extreme); S-wave ETA = hypocentral distance ÷ 3.5 km/s |
 | Tsunami | M ≥ 6.5 shallow offshore quake flagged by USGS, user < 40 m elevation; ETA = distance ÷ 700 km/h |
 | Wildfire (active) | EONET fire within 100 km; ETA only if wind is blowing from the fire toward the user (spread ≈ 3 % of wind speed) |
-| Cyclone | EONET storm within 800 km; ETA from the storm's last two track points when it is heading toward the user |
+| Cyclone | EONET storm within 800 km (own hazard type since v2); ETA from the storm's last two track points when it is heading toward the user |
+| Extreme cold | apparent temperature (incl. wind chill) ≤ −15 / −25 / −35 / −45 °C |
+| Dust / sandstorm | Open-Meteo air-quality (CAMS) mineral dust ≥ 200 / 500 / 1000 / 2000 µg/m³ |
 
 ## 4. CAP (Common Alerting Protocol) alignment
 
@@ -81,13 +83,17 @@ SafeStay represents every alert — whether derived by us or received from an of
 
 ## 5. Open-source libraries & APIs used (disclosure)
 
-No third-party JavaScript libraries — plain HTML/CSS/JS. External data APIs (all free, keyless):
+Plain HTML/CSS/JS. The only third-party script is [Leaflet](https://leafletjs.com/) 1.9.4 (BSD-2), loaded lazily from cdnjs **after** the text result and never in low-bandwidth mode unless the person taps *Load map*. External data APIs (all free, keyless):
 
 * [Open-Meteo](https://open-meteo.com/) — weather forecast & elevation (CC BY 4.0)
 * [USGS Earthquake Hazards Program](https://earthquake.usgs.gov/earthquakes/feed/) — earthquake feed (public domain)
 * [NASA EONET](https://eonet.gsfc.nasa.gov/) — natural event tracker
 * [US National Weather Service API](https://www.weather.gov/documentation/services-web-api) — official CAP alerts (US)
 * [OpenStreetMap](https://www.openstreetmap.org/copyright) via the [Overpass API](https://overpass-api.de/) — shelters/hospitals (ODbL)
+* [Open-Meteo geocoding](https://open-meteo.com/en/docs/geocoding-api) — worldwide city search; [Open-Meteo air quality](https://open-meteo.com/en/docs/air-quality-api) — dust forecast
+* [BigDataCloud client reverse-geocoding](https://www.bigdatacloud.com/free-api/free-reverse-geocode-to-city-api) — place name for GPS positions (best effort)
+* [OpenStreetMap Germany routing](https://routing.openstreetmap.de/) — walking routes (public server, fair use) and OSM map tiles
+* [RainViewer](https://www.rainviewer.com/api.html) — optional rain-radar overlay (best effort)
 * Directions open in Google Maps (link only, no API)
 
 ## 6. Run locally
@@ -109,6 +115,8 @@ See the step-by-step guide in the project hand-off notes: GitHub Pages → *Sett
 index.html              app shell
 css/style.css           responsive, dark-mode aware, low-bandwidth styling
 js/i18n.js              5 languages: UI, hazard names, alert templates, step-by-step guides
+js/i18n2.js             extra strings: cold / dust / cyclone, city search, map UI
+js/map.js               lazy-loaded Leaflet map, safe-place ranking, hazard overlays, rain radar
 js/cap.js               CAP 1.2: normalised alert model, XML export, feed parser
 js/sources.js           data fetchers + hazard analysis + ETA logic + emergency numbers
 js/app.js               UI, low-bandwidth mode, family broadcast, demo scenarios, caching
@@ -118,13 +126,24 @@ icon.svg
 demo/                   demo video goes here
 ```
 
+## 8b. Version 2 additions
+
+* **Any city worldwide:** type-ahead search (Open-Meteo geocoding) replaces the 12-city list; GPS positions get a reverse-geocoded name. The 12 built-in cities remain as an offline fallback.
+* **More hazards:** extreme cold, dust/sandstorm, and cyclone/hurricane/typhoon as its own type (with 5-language guides). `CAP.guess` maps official alert names to them.
+* **Map view:** you, the ranked safe places (★ = recommended, with a walking route), hazard positions, cyclone track + straight-line projection, wildfire downwind spread, earthquake/tsunami wave fronts, nominal forecast areas and an optional rain-radar loop.
+* **Ranking:** candidates from OpenStreetMap (shelters, hospitals, assembly points, community centres, town halls, libraries, plus the higher-ground point) are scored by walking time (OSM route when available, otherwise straight-line × 1.3 at 5 km/h) plus a hazard-specific adjustment: higher ground for flood/tsunami/cyclone, open assembly points for earthquakes, indoor buildings for heat/cold/dust/storm, away from the hazard for fire/volcano/landslide. Weights live in `MAP.adjust()` in `js/map.js`; they are heuristics, not official guidance.
+* **Text first:** the map is built after the text result has rendered; if it cannot load, the text guidance is unaffected.
+
 ## 9. Limitations (we'd rather be upfront)
 
 * **Estimates, not warnings.** ETAs are modelled from public data; always follow local authorities. USGS data lags real events by minutes, so quake "countdowns" are mainly useful for distant events and tsunami arrival; for local shaking use national early-warning systems.
 * **EONET coverage is partial** (large, curated events). Planned: NASA FIRMS active-fire pixels.
 * **Family broadcast needs a tap** (web apps can't send SMS silently). SMS/WhatsApp links are pre-filled.
 * **Translations** are prototype quality — have native speakers review before real deployment.
-* Shelter data depends on OpenStreetMap completeness; it may be empty in some regions.
+* Shelter data depends on OpenStreetMap completeness; it may be empty in some regions. "Cooling/warming centres" have no standard OSM tag, so indoor public buildings are used as a proxy.
+* Hazard progression on the map is a straight-line extrapolation from recent track points or wind speed, not an official forecast cone. Weather-type alerts are drawn as a nominal circle around the point forecast, not a real footprint.
+* Dust forecasts come from a coarse global model and can miss local sandstorms. GDACS (official multi-hazard feed) is still on the roadmap.
+* The public routing, tile and radar servers are fair-use; for production traffic use a paid or self-hosted provider.
 
 ## 10. Roadmap
 
