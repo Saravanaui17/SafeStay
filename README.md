@@ -4,7 +4,7 @@ A disaster alert web app for tourists. It checks what natural hazards are near y
 
 Built for the TravelTech track: *Real-Time Crisis Communication for Tourists During Extreme Weather Events*.
 
-- Live app: hosted on GitHub Pages (link in the repository's About section)
+- Live website: https://saravanaui17.github.io/SafeStay/ 
 - Demo video: [demo/demo.mp4](demo/demo.mp4)
 
 ## Problem
