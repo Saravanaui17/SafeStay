@@ -1,0 +1,11 @@
+{
+  "name": "SafeStay – Tourist Disaster Alerts",
+  "short_name": "SafeStay",
+  "description": "Real-time multi-hazard alerts, ETA and step-by-step safety guidance for travellers.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#10161d",
+  "theme_color": "#c62828",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
